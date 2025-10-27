@@ -9,6 +9,7 @@ let isDeviceOn = false;
 let isMqttConnected = false;
 let isFirebaseConnected = false;
 let temperatureData = [];
+let temperatureDataCelsius = []; // Original data in Celsius for unit conversion
 let humidityData = [];
 let logBuffer = [];
 let maxDataPoints = 50;
@@ -109,8 +110,109 @@ let chartInitRetryCount = 0;
 const maxChartInitRetries = 10;
 
 // ====================================================================
-// NAVIGATION
+// TEMPERATURE CONVERSION UTILITIES
 // ====================================================================
+function convertTemperature(value, fromUnit, toUnit) {
+  if (fromUnit === toUnit) return value;
+  
+  // Convert to Celsius first
+  let celsius = value;
+  if (fromUnit === 'F') {
+    celsius = (value - 32) * 5/9;
+  } else if (fromUnit === 'K') {
+    celsius = value - 273.15;
+  }
+  
+  // Convert from Celsius to target unit
+  if (toUnit === 'F') {
+    return celsius * 9/5 + 32;
+  } else if (toUnit === 'K') {
+    return celsius + 273.15;
+  }
+  
+  return celsius; // toUnit === 'C'
+}
+
+function getCurrentTempUnit() {
+  return document.getElementById("tempUnit")?.value || localStorage.getItem("tempUnit") || "C";
+}
+
+function getTemperatureAxisRange(unit) {
+  switch (unit) {
+    case 'F':
+      return { min: 59, max: 104 }; // 15°C to 40°C converted to Fahrenheit
+    case 'K':
+      return { min: 288, max: 313 }; // 15°C to 40°C converted to Kelvin
+    default: // 'C'
+      return { min: 15, max: 40 }; // Standard Celsius range
+  }
+}
+
+function updateTemperatureLabels() {
+  const unit = getCurrentTempUnit();
+  const tempMinLabel = document.getElementById("tempMinLabel");
+  const tempMaxLabel = document.getElementById("tempMaxLabel");
+  const dataTableTempHeader = document.getElementById("dataTableTempHeader");
+  const liveDataTempHeader = document.getElementById("liveDataTempHeader");
+  const tempChartTitle = document.getElementById("tempChartTitle");
+  
+  if (tempMinLabel) {
+    tempMinLabel.textContent = `Temp Min (${unit}):`;
+  }
+  if (tempMaxLabel) {
+    tempMaxLabel.textContent = `Temp Max (${unit}):`;
+  }
+  if (dataTableTempHeader) {
+    dataTableTempHeader.textContent = `Temp (${unit})`;
+  }
+  if (liveDataTempHeader) {
+    liveDataTempHeader.textContent = `Temp (${unit})`;
+  }
+  if (tempChartTitle) {
+    tempChartTitle.textContent = `Temperature (°${unit})`;
+  }
+}
+
+function updateTemperatureChart() {
+  if (!tempChart || temperatureDataCelsius.length === 0) return;
+  
+  const currentTempUnit = getCurrentTempUnit();
+  const axisRange = getTemperatureAxisRange(currentTempUnit);
+  
+  // Convert all existing temperature data from Celsius to new unit
+  temperatureData.length = 0;
+  temperatureDataCelsius.forEach(dataPoint => {
+    const convertedValue = convertTemperature(dataPoint.value, 'C', currentTempUnit);
+    temperatureData.push({
+      time: dataPoint.time,
+      value: convertedValue
+    });
+  });
+  
+  // Update chart dataset label
+  tempChart.data.datasets[0].label = `Temperature (°${currentTempUnit})`;
+  
+  // Update chart data
+  tempChart.data.datasets[0].data = temperatureData.map((d) => d.value);
+  
+  // Update Y-axis range, label and tooltip
+  tempChart.options.scales.y.suggestedMin = axisRange.min;
+  tempChart.options.scales.y.suggestedMax = axisRange.max;
+  
+  tempChart.options.plugins.tooltip.callbacks.label = function (context) {
+    return `Temperature: ${context.parsed.y.toFixed(1)}°${currentTempUnit}`;
+  };
+  
+  tempChart.options.scales.y.ticks.callback = function (value) {
+    return value.toFixed(1) + `°${currentTempUnit}`;
+  };
+  
+  tempChart.update("active");
+  updateChartStats("temp");
+  
+  console.log(`[updateTemperatureChart] Chart updated to ${currentTempUnit} unit with ${temperatureData.length} points`);
+}
+
 document.querySelectorAll(".menu-item").forEach((item) => {
   item.addEventListener("click", function () {
     const page = this.dataset.page;
@@ -622,12 +724,16 @@ function updateCurrentDisplay() {
     currentHumi !== null ? currentHumi.toFixed(1) : "--";
 
   // Prefer the device-provided timestamp if available
-  const timeStr = lastReadingTimestamp
-    ? new Date(lastReadingTimestamp).toLocaleTimeString("en-US", {
+  const dateTimeStr = lastReadingTimestamp
+    ? new Date(lastReadingTimestamp).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "2-digit", 
+        year: "numeric"
+      }) + " " + new Date(lastReadingTimestamp).toLocaleTimeString("en-US", {
         hour12: false,
       })
-    : "--:--:--";
-  document.getElementById("lastUpdate").textContent = `Updated at ${timeStr}`;
+    : "--/--/---- --:--:--";
+  document.getElementById("lastUpdate").textContent = dateTimeStr;
 }
 
 // ====================================================================
@@ -755,13 +861,16 @@ function initializeCharts() {
   console.log("[CHART] Starting chart initialization with Chart.js...");
 
   try {
+    const currentTempUnit = getCurrentTempUnit();
+    const axisRange = getTemperatureAxisRange(currentTempUnit);
+    
     tempChart = new Chart(tempCtx, {
       type: "line",
       data: {
         labels: [],
         datasets: [
           {
-            label: "Temperature (C)",
+            label: `Temperature (°${currentTempUnit})`,
             data: [],
             borderColor: "#06B6D4",
             backgroundColor: "rgba(6, 182, 212, 0.1)",
@@ -795,7 +904,7 @@ function initializeCharts() {
             displayColors: false,
             callbacks: {
               label: function (context) {
-                return `Temperature: ${context.parsed.y.toFixed(1)}C`;
+                return `Temperature: ${context.parsed.y.toFixed(1)}°${getCurrentTempUnit()}`;
               },
             },
           },
@@ -803,14 +912,14 @@ function initializeCharts() {
         scales: {
           y: {
             beginAtZero: false,
-            suggestedMin: 15,
-            suggestedMax: 40,
+            suggestedMin: axisRange.min,
+            suggestedMax: axisRange.max,
             grid: {
               color: "rgba(6, 182, 212, 0.1)",
             },
             ticks: {
               callback: function (value) {
-                return value.toFixed(1) + "C";
+                return value.toFixed(1) + `°${getCurrentTempUnit()}`;
               },
             },
           },
@@ -943,14 +1052,22 @@ function pushTemperature(value, update = true, timestamp = null) {
     ? new Date(timestamp).toLocaleTimeString("en-US", { hour12: false })
     : new Date().toLocaleTimeString("en-US", { hour12: false });
 
-  temperatureData.push({ value, time });
+  // Store original value in Celsius
+  temperatureDataCelsius.push({ value, time });
+  
+  // Convert temperature from Celsius (stored value) to current display unit
+  const currentTempUnit = getCurrentTempUnit();
+  const displayValue = convertTemperature(value, 'C', currentTempUnit);
+  
+  temperatureData.push({ value: displayValue, time });
 
   if (temperatureData.length > maxDataPoints) {
     temperatureData.shift();
+    temperatureDataCelsius.shift();
   }
 
   console.log(
-    `[pushTemperature] Value: ${value}, Update: ${update}, TempChart exists: ${!!tempChart}, Array length: ${
+    `[pushTemperature] Value: ${value}°C -> ${displayValue}°${currentTempUnit}, Update: ${update}, TempChart exists: ${!!tempChart}, Array length: ${
       temperatureData.length
     }`
   );
@@ -1024,6 +1141,7 @@ function updateChartStats(type) {
 
 function clearChartData() {
   temperatureData = [];
+  temperatureDataCelsius = [];
   humidityData = [];
 
   if (tempChart) {
@@ -1234,6 +1352,7 @@ function loadHistoryFromFirebase() {
 
       // Clear existing chart data
       temperatureData = [];
+      temperatureDataCelsius = [];
       humidityData = [];
 
       // Populate charts
@@ -1306,6 +1425,8 @@ function renderLiveDataTable() {
     return;
   }
 
+  const currentTempUnit = getCurrentTempUnit();
+
   tbody.innerHTML = filtered
     .map((data, idx) => {
       const time = new Date(data.time).toLocaleTimeString("en-US", {
@@ -1315,13 +1436,16 @@ function renderLiveDataTable() {
         data.status === "success" ? "connected" : "disconnected";
       const statusText = data.status === "success" ? " Success" : " Error";
 
+      // Convert temperature to current unit for display
+      const tempForDisplay = data.temp ? 
+        convertTemperature(data.temp, 'C', currentTempUnit).toFixed(1) : 
+        "--";
+
       return `
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 0.75rem;">${idx + 1}</td>
                         <td style="padding: 0.75rem;">${time}</td>
-                        <td style="padding: 0.75rem;">${data.temp.toFixed(
-                          1
-                        )}</td>
+                        <td style="padding: 0.75rem;">${tempForDisplay}</td>
                         <td style="padding: 0.75rem;">${data.humi.toFixed(
                           1
                         )}</td>
@@ -1378,15 +1502,17 @@ function bindLiveDataButtons() {
         return;
       }
 
+      const currentTempUnit = getCurrentTempUnit();
       const csv = [
-        ["#", "Time", "Temperature (C)", "Humidity (%)", "Mode", "Status"].join(
+        ["#", "Time", `Temperature (${currentTempUnit})`, "Humidity (%)", "Mode", "Status"].join(
           ","
         ),
         ...liveDataBuffer.map((d, idx) => {
           const time = new Date(d.time).toLocaleTimeString("en-US", {
             hour12: false,
           });
-          return [idx + 1, time, d.temp, d.humi, d.mode, d.status].join(",");
+          const tempForExport = convertTemperature(d.temp, 'C', currentTempUnit).toFixed(1);
+          return [idx + 1, time, tempForExport, d.humi, d.mode, d.status].join(",");
         }),
       ].join("\n");
 
@@ -1834,6 +1960,8 @@ function applyDataFilters() {
     return;
   }
 
+  const currentTempUnit = getCurrentTempUnit();
+  
   const filters = {
     dateFrom: document.getElementById("filterDateFrom").value || "2024-01-01",
     dateTo:
@@ -1851,6 +1979,14 @@ function applyDataFilters() {
       parseFloat(document.getElementById("filterHumiMax").value) || Infinity,
     sortBy: document.getElementById("filterSort").value,
   };
+
+  // Convert temperature filter values from current unit to Celsius (database stores in Celsius)
+  if (filters.tempMin !== -Infinity) {
+    filters.tempMin = convertTemperature(filters.tempMin, currentTempUnit, 'C');
+  }
+  if (filters.tempMax !== Infinity) {
+    filters.tempMax = convertTemperature(filters.tempMax, currentTempUnit, 'C');
+  }
 
   addStatus("Loading filtered data from Firebase...", "INFO");
 
@@ -1939,6 +2075,8 @@ function renderDataManagementTable(data) {
     return;
   }
 
+  const currentTempUnit = getCurrentTempUnit();
+
   tbody.innerHTML = data
     .map((record, idx) => {
       // Use device timestamp (time field) instead of created_at
@@ -1950,13 +2088,16 @@ function renderDataManagementTable(data) {
         record.status === "success" ? "connected" : "disconnected";
       const statusText = record.status === "success" ? " Success" : " Error";
 
+      // Convert temperature to current unit for display
+      const tempForDisplay = record.temp ? 
+        convertTemperature(record.temp, 'C', currentTempUnit).toFixed(1) : 
+        "--";
+
       return `
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 0.75rem;">${idx + 1}</td>
                         <td style="padding: 0.75rem;">${dateStr} ${timeStr}</td>
-                        <td style="padding: 0.75rem;">${
-                          record.temp?.toFixed(1) || "--"
-                        }</td>
+                        <td style="padding: 0.75rem;">${tempForDisplay}</td>
                         <td style="padding: 0.75rem;">${
                           record.humi?.toFixed(1) || "--"
                         }</td>
@@ -1987,6 +2128,7 @@ function updateDataStatistics(data) {
     return;
   }
 
+  const currentTempUnit = getCurrentTempUnit();
   const successCount = data.filter((d) => d.status === "success").length;
   const successRate = ((successCount / data.length) * 100).toFixed(1);
 
@@ -1997,10 +2139,15 @@ function updateDataStatistics(data) {
     .filter((d) => d.humi !== null && d.humi !== 0)
     .map((d) => d.humi);
 
-  const avgTemp =
+  const avgTempCelsius =
     temps.length > 0
-      ? (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1)
-      : "--";
+      ? temps.reduce((a, b) => a + b, 0) / temps.length
+      : null;
+
+  const avgTemp = avgTempCelsius !== null 
+    ? convertTemperature(avgTempCelsius, 'C', currentTempUnit).toFixed(1)
+    : "--";
+
   const avgHumi =
     humis.length > 0
       ? (humis.reduce((a, b) => a + b, 0) / humis.length).toFixed(1)
@@ -2009,7 +2156,7 @@ function updateDataStatistics(data) {
   document.getElementById("statsTotal").textContent = data.length;
   document.getElementById("statsSuccess").textContent = successRate + "%";
   document.getElementById("statsAvgTemp").textContent =
-    avgTemp + (avgTemp !== "--" ? "C" : "");
+    avgTemp + (avgTemp !== "--" ? currentTempUnit : "");
   document.getElementById("statsAvgHumi").textContent =
     avgHumi + (avgHumi !== "--" ? "%" : "");
 }
@@ -2020,11 +2167,12 @@ function exportFilteredData() {
     return;
   }
 
+  const currentTempUnit = getCurrentTempUnit();
   const headers = [
     "#",
     "Date",
     "Time",
-    "Temperature (C)",
+    `Temperature (${currentTempUnit})`,
     "Humidity (%)",
     "Mode",
     "Status",
@@ -2033,11 +2181,15 @@ function exportFilteredData() {
   ];
   const rows = filteredDataCache.map((record, idx) => {
     const date = new Date(record.created_at);
+    const tempForExport = record.temp ? 
+      convertTemperature(record.temp, 'C', currentTempUnit).toFixed(1) : 
+      "--";
+    
     return [
       idx + 1,
       date.toLocaleDateString(),
       date.toLocaleTimeString("en-US", { hour12: false }),
-      record.temp,
+      tempForExport,
       record.humi,
       record.mode,
       record.status,
@@ -2602,6 +2754,10 @@ function saveSettings() {
 
   addStatus(" Settings saved to localStorage", "SUCCESS");
 
+  // Update temperature labels and chart when unit changes
+  updateTemperatureLabels();
+  updateTemperatureChart();
+
   // Reconnect MQTT with diagnostic
   addStatus(" Reconnecting MQTT broker...", "INFO");
   if (mqttClient && mqttClient.connected) {
@@ -2957,9 +3113,19 @@ function updateFooterClock() {
   if (deviceClockMs !== null && deviceClockSetAtMs !== null) {
     const elapsed = Date.now() - deviceClockSetAtMs;
     const currentDeviceTime = deviceClockMs + elapsed;
-    display = new Date(currentDeviceTime).toLocaleTimeString("en-US", {
+    const deviceDate = new Date(currentDeviceTime);
+    
+    // Format date as DD/MM/YYYY HH:MM:SS
+    const dateStr = deviceDate.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+    const timeStr = deviceDate.toLocaleTimeString("en-US", {
       hour12: false,
     });
+    
+    display = `${dateStr} ${timeStr}`;
 
     // Debug: log every 10 seconds to verify it's updating
     if (
@@ -2976,7 +3142,7 @@ function updateFooterClock() {
       });
     }
   } else {
-    display = "--:--:--";
+    display = "--/--/---- --:--:--";
   }
   const el = document.getElementById("footerTime");
   if (el) el.textContent = display;
@@ -3032,6 +3198,23 @@ function runInitialization() {
     document.getElementById("firebaseProject").value =
       FIREBASE_CONFIG.projectId;
   }
+
+  // Load display preferences and update temperature unit selector
+  const savedTempUnit = localStorage.getItem("tempUnit") || "C";
+  const tempUnitSelect = document.getElementById("tempUnit");
+  if (tempUnitSelect) {
+    tempUnitSelect.value = savedTempUnit;
+    
+    // Add event listener for temperature unit changes
+    tempUnitSelect.addEventListener("change", function() {
+      updateTemperatureLabels();
+      updateTemperatureChart();
+      localStorage.setItem("tempUnit", this.value);
+    });
+  }
+
+  // Initialize temperature labels
+  updateTemperatureLabels();
 
   // Initialize charts FIRST - CRITICAL for rendering
   console.log("[INIT] Calling initializeCharts()");

@@ -125,15 +125,15 @@
               <i data-feather="activity"></i>
               Current Reading
             </div>
-            <div class="reading-time" id="lastUpdate">Updated at --:--:--</div>
+            <div class="reading-time" id="lastUpdate">--/--/---- --:--:--</div>
             <div class="reading-values">
               <div class="reading-value">
                 <div class="reading-number" id="currentTemp">--</div>
-                <div class="reading-unit">C</div>
+                <div class="reading-unit"></div>
               </div>
               <div class="reading-value">
                 <div class="reading-number" id="currentHumi">--</div>
-                <div class="reading-unit">%</div>
+                <div class="reading-unit"></div>
               </div>
             </div>
           </div>
@@ -152,7 +152,7 @@
             <div class="card">
               <div class="card-header">
                 <i data-feather="trending-up"></i>
-                Temperature (C)
+                <span id="tempChartTitle">Temperature (C)</span>
               </div>
               <div class="chart-container">
                 <canvas id="tempChart"></canvas>
@@ -269,6 +269,7 @@
                         text-align: left;
                         font-weight: 600;
                       "
+                      id="liveDataTempHeader"
                     >
                       Temp (C)
                     </th>
@@ -475,6 +476,7 @@
         <section class="page-section" id="page-time">
           <div class="card">
             <div class="card-header">
+              
               <i data-feather="clock"></i>
               System Time Configuration
             </div>
@@ -860,7 +862,7 @@
             >
               <div style="display: flex; gap: 0.5rem; align-items: end">
                 <div class="form-group" style="margin: 0; flex: 1">
-                  <label class="form-label">Temp Min (C):</label>
+                  <label class="form-label" id="tempMinLabel">Temp Min (C):</label>
                   <input
                     type="number"
                     class="form-input"
@@ -871,7 +873,7 @@
                 </div>
                 <span style="padding-bottom: 0.75rem">to</span>
                 <div class="form-group" style="margin: 0; flex: 1">
-                  <label class="form-label">Temp Max (C):</label>
+                  <label class="form-label" id="tempMaxLabel">Temp Max (C):</label>
                   <input
                     type="number"
                     class="form-input"
@@ -964,6 +966,7 @@
                         text-align: left;
                         font-weight: 600;
                       "
+                      id="dataTableTempHeader"
                     >
                       Temp (C)
                     </th>
@@ -1464,33 +1467,7 @@
                       <option value="12h">12-hour (AM/PM)</option>
                     </select>
                   </div>
-                  <div>
-                    <label
-                      style="
-                        display: block;
-                        font-weight: 600;
-                        margin-bottom: 0.5rem;
-                        color: var(--text-primary);
-                      "
-                      >Date Format</label
-                    >
-                    <select
-                      id="dateFormat"
-                      style="
-                        width: 100%;
-                        padding: 0.5rem 0.75rem;
-                        border: 1px solid var(--border-color);
-                        border-radius: 0.5rem;
-                        font-size: 0.875rem;
-                        background-color: var(--bg-primary);
-                        color: var(--text-primary);
-                      "
-                    >
-                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                    </select>
-                  </div>
+                  
                 </div>
               </div>
 
@@ -1797,7 +1774,7 @@
       <footer class="footer">
         <div class="footer-item">
           <i data-feather="clock" style="width: 16px; height: 16px"></i>
-          System Time: <strong id="footerTime">--:--:--</strong>
+          System Time: <strong id="footerTime">--/--/---- --:--:--</strong>
         </div>
         <div class="footer-item">DataLogger System</div>
       </footer>
